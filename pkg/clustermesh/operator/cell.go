@@ -25,6 +25,8 @@ var Cell = cell.Module(
 	"Cell providing clustermesh capabilities in the operator",
 	cell.Config(ClusterMeshConfig{}),
 	cell.Config(mcsapitypes.DefaultMCSAPIConfig),
+	cell.Config(types.DefaultClusterMeshServiceModeV2Config),
+	cell.Invoke(types.ClusterMeshServiceModeV2Config.Validate),
 	cell.Provide(
 		common.DefaultRemoteClientFactory,
 		newClusterMesh,

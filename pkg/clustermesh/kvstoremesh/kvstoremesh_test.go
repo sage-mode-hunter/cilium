@@ -50,6 +50,8 @@ func fixture(extra ...cell.Cell) *hive.Hive {
 		Cell,
 
 		store.Cell,
+		cell.Config(types.DefaultClusterMeshServiceModeV2Config),
+		cell.Invoke(types.ClusterMeshServiceModeV2Config.Validate),
 		cell.Provide(
 			func() types.ClusterInfo { return types.ClusterInfo{ID: 10, Name: "local"} },
 			func() Config { return DefaultConfig },

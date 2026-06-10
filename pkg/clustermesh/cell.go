@@ -43,6 +43,8 @@ var Cell = cell.Module(
 	cell.ProvidePrivate(idsMgrProvider),
 
 	cell.Config(common.DefaultConfig),
+	cell.Config(types.DefaultClusterMeshServiceModeV2Config),
+	cell.Invoke(types.ClusterMeshServiceModeV2Config.Validate),
 	cell.Config(wait.TimeoutConfigDefault),
 
 	metrics.Metric(NewMetrics),
