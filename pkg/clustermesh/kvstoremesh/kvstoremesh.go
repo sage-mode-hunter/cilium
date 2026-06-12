@@ -70,6 +70,7 @@ type params struct {
 	cell.In
 
 	Config
+	types.ClusterMeshServiceModeV2Config
 
 	ClusterInfo  types.ClusterInfo
 	CommonConfig common.Config
