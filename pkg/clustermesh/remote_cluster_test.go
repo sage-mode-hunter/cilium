@@ -71,13 +71,17 @@ func TestRemoteClusterRun(t *testing.T) {
 	)
 
 	tests := []struct {
-		name   string
-		srccfg types.CiliumClusterConfig
-		kvs    map[string]string
+		name                 string
+		expectedServiceWatch bool
+		serviceV2Mode        types.ClusterMeshServiceV2Mode
+		srccfg               types.CiliumClusterConfig
+		kvs                  map[string]string
 	}{
 		{
-			name:   "remote cluster has no capabilities",
-			srccfg: types.CiliumClusterConfig{ID: 1},
+			name:                 "remote cluster has no capabilities",
+			serviceV2Mode:        types.ClusterMeshServiceV2PreferLegacy,
+			expectedServiceWatch: true,
+			srccfg:               types.CiliumClusterConfig{ID: 1},
 			kvs: map[string]string{
 				"cilium/state/nodes/v1/foo/bar":        `{"name": "bar", "cluster": "foo", "clusterID": 1}`,
 				"cilium/state/services/v1/foo/baz/bar": `{"name": "bar", "namespace": "baz", "cluster": "foo", "clusterID": 1}`,
@@ -86,7 +90,20 @@ func TestRemoteClusterRun(t *testing.T) {
 			},
 		},
 		{
-			name: "remote cluster supports sync canaries",
+			name:          "services disabled by mode",
+			serviceV2Mode: types.ClusterMeshServiceV2OnlyEndpointSlice,
+			srccfg:        types.CiliumClusterConfig{ID: 1},
+			kvs: map[string]string{
+				"cilium/state/nodes/v1/foo/bar":        `{"name": "bar", "cluster": "foo", "clusterID": 1}`,
+				"cilium/state/services/v1/foo/baz/bar": `{"name": "bar", "namespace": "baz", "cluster": "foo", "clusterID": 1}`,
+				"cilium/state/identities/v1/id/65538":  `key1=value1;key2=value2;k8s:io.cilium.k8s.policy.cluster=foo`,
+				"cilium/state/ip/v1/default/1.1.1.1":   `{"IP": "1.1.1.1", "ID": 65538}`,
+			},
+		},
+		{
+			name:                 "remote cluster supports sync canaries",
+			serviceV2Mode:        types.ClusterMeshServiceV2PreferLegacy,
+			expectedServiceWatch: true,
 			srccfg: types.CiliumClusterConfig{
 				ID: 255,
 				Capabilities: types.CiliumClusterConfigCapabilities{
@@ -107,7 +124,9 @@ func TestRemoteClusterRun(t *testing.T) {
 			},
 		},
 		{
-			name: "remote cluster supports both sync canaries and cached prefixes",
+			name:                 "remote cluster supports both sync canaries and cached prefixes",
+			serviceV2Mode:        types.ClusterMeshServiceV2PreferLegacy,
+			expectedServiceWatch: true,
 			srccfg: types.CiliumClusterConfig{
 				ID: 255,
 				Capabilities: types.CiliumClusterConfigCapabilities{
@@ -156,21 +175,24 @@ func TestRemoteClusterRun(t *testing.T) {
 			var ipc fakeIPCache
 			cm := ClusterMesh{
 				conf: Configuration{
-					NodeObserver:          newNodesObserver(),
-					IPCache:               &ipc,
-					RemoteIdentityWatcher: allocator,
-					ClusterIDsManager:     NewClusterMeshUsedIDs(localClusterID),
-					ServiceMerger:         &fakeObserver{},
-					Metrics:               NewMetrics(),
-					StoreFactory:          store,
-					ClusterInfo:           types.ClusterInfo{ID: localClusterID, Name: localClusterName, MaxConnectedClusters: 255},
-					FeatureMetrics:        NewClusterMeshMetricsNoop(),
-					Logger:                logger,
+					ClusterMeshServiceModeV2Config: types.ClusterMeshServiceModeV2Config{ClusterMeshServiceV2: tt.serviceV2Mode},
+					NodeObserver:                   newNodesObserver(),
+					IPCache:                        &ipc,
+					RemoteIdentityWatcher:          allocator,
+					ClusterIDsManager:              NewClusterMeshUsedIDs(localClusterID),
+					ServiceMerger:                  &fakeObserver{},
+					Metrics:                        NewMetrics(),
+					StoreFactory:                   store,
+					ClusterInfo:                    types.ClusterInfo{ID: localClusterID, Name: localClusterName, MaxConnectedClusters: 255},
+					FeatureMetrics:                 NewClusterMeshMetricsNoop(),
+					Logger:                         logger,
 				},
 				FeatureMetrics: NewClusterMeshMetricsNoop(),
 				globalServices: common.NewGlobalServiceCache(logger),
 			}
-			rc := cm.NewRemoteCluster("foo", nil).(*remoteCluster)
+			rc := cm.NewRemoteCluster("foo", func() *models.RemoteCluster {
+				return &models.RemoteCluster{Ready: true}
+			}).(*remoteCluster)
 			ready := make(chan error)
 
 			remoteClient := &remoteEtcdClientWrapper{
@@ -191,7 +213,16 @@ func TestRemoteClusterRun(t *testing.T) {
 
 			// Assert that we correctly watch services
 			require.EventuallyWithT(t, func(c *assert.CollectT) {
-				assert.EqualValues(c, 1, rc.remoteServices.NumEntries())
+				status := rc.Status()
+				if tt.expectedServiceWatch {
+					assert.EqualValues(c, 1, rc.remoteServices.NumEntries())
+					assert.True(c, status.Synced.Services, "Services should be synced")
+					assert.EqualValues(c, 1, status.NumSharedServices, "Incorrect number of services")
+				} else {
+					assert.EqualValues(c, 0, rc.remoteServices.NumEntries())
+					assert.True(c, status.Synced.Services, "Disabled services should be considered synced")
+					assert.EqualValues(c, 0, status.NumSharedServices, "Incorrect number of services")
+				}
 			}, timeout, tick, "Services are not watched correctly")
 
 			// Assert that we correctly watch ipcache entries
@@ -283,16 +314,17 @@ func TestRemoteClusterClusterIDChange(t *testing.T) {
 	var obs fakeObserver
 	cm := ClusterMesh{
 		conf: Configuration{
-			NodeObserver:          &obs,
-			ServiceMerger:         &obs,
-			IPCache:               &obs,
-			RemoteIdentityWatcher: allocator,
-			ClusterIDsManager:     NewClusterMeshUsedIDs(localClusterID),
-			Metrics:               NewMetrics(),
-			StoreFactory:          store,
-			ClusterInfo:           types.ClusterInfo{ID: localClusterID, Name: localClusterName, MaxConnectedClusters: 255},
-			FeatureMetrics:        NewClusterMeshMetricsNoop(),
-			Logger:                logger,
+			ClusterMeshServiceModeV2Config: types.ClusterMeshServiceModeV2Config{ClusterMeshServiceV2: types.ClusterMeshServiceV2PreferLegacy},
+			NodeObserver:                   &obs,
+			ServiceMerger:                  &obs,
+			IPCache:                        &obs,
+			RemoteIdentityWatcher:          allocator,
+			ClusterIDsManager:              NewClusterMeshUsedIDs(localClusterID),
+			Metrics:                        NewMetrics(),
+			StoreFactory:                   store,
+			ClusterInfo:                    types.ClusterInfo{ID: localClusterID, Name: localClusterName, MaxConnectedClusters: 255},
+			FeatureMetrics:                 NewClusterMeshMetricsNoop(),
+			Logger:                         logger,
 
 			ObserverFactories: []observer.Factory{
 				func(string, func()) observer.Observer { return &extra },
@@ -452,15 +484,16 @@ func TestRemoteClusterExtraObservers(t *testing.T) {
 
 	cm := ClusterMesh{
 		conf: Configuration{
-			ClusterIDsManager:     NewClusterMeshUsedIDs(localClusterID),
-			ServiceMerger:         &fakeObserver{},
-			RemoteIdentityWatcher: cache.NewNoopIdentityAllocator(logger),
-			ObserverFactories:     []observer.Factory{factory(&fooobs), factory(&barobs)},
-			Metrics:               NewMetrics(),
-			StoreFactory:          store.NewFactory(logger, store.MetricsProvider()),
-			ClusterInfo:           types.ClusterInfo{ID: localClusterID, Name: localClusterName, MaxConnectedClusters: 255},
-			FeatureMetrics:        NewClusterMeshMetricsNoop(),
-			Logger:                logger,
+			ClusterMeshServiceModeV2Config: types.ClusterMeshServiceModeV2Config{ClusterMeshServiceV2: types.ClusterMeshServiceV2PreferLegacy},
+			ClusterIDsManager:              NewClusterMeshUsedIDs(localClusterID),
+			ServiceMerger:                  &fakeObserver{},
+			RemoteIdentityWatcher:          cache.NewNoopIdentityAllocator(logger),
+			ObserverFactories:              []observer.Factory{factory(&fooobs), factory(&barobs)},
+			Metrics:                        NewMetrics(),
+			StoreFactory:                   store.NewFactory(logger, store.MetricsProvider()),
+			ClusterInfo:                    types.ClusterInfo{ID: localClusterID, Name: localClusterName, MaxConnectedClusters: 255},
+			FeatureMetrics:                 NewClusterMeshMetricsNoop(),
+			Logger:                         logger,
 		},
 		FeatureMetrics: NewClusterMeshMetricsNoop(),
 		globalServices: common.NewGlobalServiceCache(logger),

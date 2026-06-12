@@ -21,6 +21,7 @@ import (
 	"github.com/cilium/cilium/pkg/kvstore"
 	"github.com/cilium/cilium/pkg/kvstore/store"
 	"github.com/cilium/cilium/pkg/lock"
+	"github.com/cilium/cilium/pkg/logging/logfields"
 )
 
 var (
@@ -38,6 +39,7 @@ type remoteCluster struct {
 
 	clusterMeshEnableEndpointSync bool
 	clusterMeshEnableMCSAPI       bool
+	clusterMeshServiceV2          types.ClusterMeshServiceV2Mode
 
 	// remoteServices is the shared store representing services in remote clusters
 	remoteServices store.WatchStore
@@ -76,9 +78,22 @@ func (rc *remoteCluster) Run(ctx context.Context, backend kvstore.BackendOperati
 	}
 
 	if rc.clusterMeshEnableEndpointSync {
-		mgr.Register(adapter(serviceStore.ServiceStorePrefix), func(ctx context.Context) {
-			rc.remoteServices.Watch(ctx, backend, kvstore.JoinKey(adapter(serviceStore.ServiceStorePrefix), rc.name))
-		})
+		if rc.clusterMeshServiceV2.WatchLegacyServices() &&
+			config.Capabilities.EndpointSlicesExportMode != types.EndpointSlicesExportModeEndpointSlicesOnly {
+			mgr.Register(adapter(serviceStore.ServiceStorePrefix), func(ctx context.Context) {
+				rc.remoteServices.Watch(ctx, backend, kvstore.JoinKey(adapter(serviceStore.ServiceStorePrefix), rc.name))
+			})
+		} else {
+			if rc.clusterMeshServiceV2.WatchLegacyServices() {
+				rc.logger.Error("Remote cluster does not support legacy service resources while Cilium is configured to watch them. "+
+					"EndpointSliceSync will not take into account any backends from this cluster!",
+					logfields.ClusterName, rc.name)
+			}
+			// Drain any existing services in case the remote cluster no longer supports them
+			rc.remoteServices.Drain()
+			// Mimic that services are synced if not enabled
+			rc.synced.services.Stop()
+		}
 	}
 
 	if rc.clusterMeshEnableMCSAPI && config.Capabilities.ServiceExportsEnabled != nil {
@@ -186,8 +201,10 @@ func (rc *remoteCluster) Status() *models.RemoteCluster {
 	status.NumSharedServices = int64(rc.remoteServices.NumEntries())
 	status.NumServiceExports = int64(rc.remoteServiceExports.NumEntries())
 
+	isServicesWatched := rc.clusterMeshEnableEndpointSync && rc.clusterMeshServiceV2.WatchLegacyServices()
+
 	status.Synced = &models.RemoteClusterSynced{
-		Services: !rc.clusterMeshEnableEndpointSync || rc.remoteServices.Synced(),
+		Services: !isServicesWatched || rc.remoteServices.Synced(),
 		// The operator does not watch nodes, endpoints and identities, hence
 		// let's pretend them to be synchronized by default.
 		Nodes:      true,

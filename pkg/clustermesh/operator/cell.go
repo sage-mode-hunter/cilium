@@ -44,6 +44,7 @@ type clusterMeshParams struct {
 	cell.In
 
 	common.Config
+	types.ClusterMeshServiceModeV2Config
 	wait.TimeoutConfig
 	Cfg       ClusterMeshConfig
 	CfgMCSAPI mcsapitypes.MCSAPIConfig
