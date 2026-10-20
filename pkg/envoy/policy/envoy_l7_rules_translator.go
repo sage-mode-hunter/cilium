@@ -159,18 +159,15 @@ func (r *envoyL7RulesTranslator) getHTTPRule(h *policyapi.PortRuleHTTP, ns strin
 		value, err := r.getSecretString(hdr, ns)
 		if err != nil {
 			r.logger.Warn("Failed fetching K8s Secret, header match will fail", logfields.Error, err)
-			// Envoy treats an empty exact match value as matching ANY value; adding
-			// InvertMatch: true here will cause this rule to NEVER match.
+			// Require the header to be both present and absent so that this rule
+			// NEVER matches. An inverted empty StringMatch would not work here, as
+			// it matches any request carrying the header with a non-empty value.
 			headers = append(headers, &envoy_config_route.HeaderMatcher{
-				Name: hdr.Name,
-				HeaderMatchSpecifier: &envoy_config_route.HeaderMatcher_StringMatch{
-					StringMatch: &envoy_type_matcher.StringMatcher{
-						MatchPattern: &envoy_type_matcher.StringMatcher_Exact{
-							Exact: "",
-						},
-					},
-				},
-				InvertMatch: true,
+				Name:                 hdr.Name,
+				HeaderMatchSpecifier: &envoy_config_route.HeaderMatcher_PresentMatch{PresentMatch: true},
+			}, &envoy_config_route.HeaderMatcher{
+				Name:                 hdr.Name,
+				HeaderMatchSpecifier: &envoy_config_route.HeaderMatcher_PresentMatch{PresentMatch: false},
 			})
 		} else if value != "" {
 			// Inline value provided.
