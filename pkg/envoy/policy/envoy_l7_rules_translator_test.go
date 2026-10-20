@@ -91,15 +91,12 @@ var PortRuleHeaderMatchSecret = &api.PortRuleHTTP{
 
 var expectedHeadersPortRuleHeaderMatchSecretNilSecretManager = []*envoy_config_route.HeaderMatcher{
 	{
-		Name: "VeryImportantHeader",
-		HeaderMatchSpecifier: &envoy_config_route.HeaderMatcher_StringMatch{
-			StringMatch: &envoy_type_matcher.StringMatcher{
-				MatchPattern: &envoy_type_matcher.StringMatcher_Exact{
-					Exact: "",
-				},
-			},
-		},
-		InvertMatch: true,
+		Name:                 "VeryImportantHeader",
+		HeaderMatchSpecifier: &envoy_config_route.HeaderMatcher_PresentMatch{PresentMatch: false},
+	},
+	{
+		Name:                 "VeryImportantHeader",
+		HeaderMatchSpecifier: &envoy_config_route.HeaderMatcher_PresentMatch{PresentMatch: true},
 	},
 }
 
