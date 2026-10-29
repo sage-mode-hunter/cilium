@@ -1,0 +1,56 @@
+- gamma: true
+  hostname: '*'
+  name: tenant-echo-80
+  port: 80
+  routes:
+  - backends:
+    - TLS: null
+      app_protocol: http
+      name: echo-v1
+      namespace: tenant
+      port:
+        port: 80
+    hostnames:
+    - '*'
+    path_match: {}
+    timeout: {}
+  service:
+    type: ClusterIP
+  sources:
+  - kind: Service
+    name: echo
+    namespace: tenant
+    version: v1
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: mesh-cross-namespace-parent
+    namespace: tenant
+    version: v1
+- gamma: true
+  hostname: '*'
+  name: tenant-echo-7070
+  port: 7070
+  routes:
+  - backends:
+    - TLS: null
+      app_protocol: grpc
+      name: echo-v1
+      namespace: tenant
+      port:
+        port: 7070
+    hostnames:
+    - '*'
+    path_match: {}
+    timeout: {}
+  service:
+    type: ClusterIP
+  sources:
+  - kind: Service
+    name: echo
+    namespace: tenant
+    version: v1
+  - group: gateway.networking.k8s.io
+    kind: GRPCRoute
+    name: mesh-grpc-cross-namespace-parent
+    namespace: tenant
+    version: v1
