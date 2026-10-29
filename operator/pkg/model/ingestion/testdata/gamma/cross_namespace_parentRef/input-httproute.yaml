@@ -1,0 +1,19 @@
+- metadata:
+    creationTimestamp: null
+    name: mesh-cross-namespace-parent
+    namespace: tenant
+  spec:
+    parentRefs:
+    - group: ""
+      kind: Service
+      name: echo
+      namespace: victim
+    - group: ""
+      kind: Service
+      name: echo
+    rules:
+    - backendRefs:
+      - name: echo-v1
+        port: 80
+  status:
+    parents: null

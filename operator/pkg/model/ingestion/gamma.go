@@ -125,6 +125,18 @@ func toGammaHTTPRoutes(
 				continue
 			}
 
+			// Only producer Routes are supported, so the parent Service must be in
+			// the same namespace as the HTTPRoute. The route checks do not accept
+			// such a parent, but the HTTPRoute is still passed in here when one of
+			// its other parents was accepted.
+			if parentSvc.GetNamespace() != hr.GetNamespace() {
+				log.Debug("gamma Ingestion: Skipping parent Service in a different namespace",
+					logfields.K8sNamespace, parentSvc.GetNamespace(),
+					logfields.Name, parentSvc.GetName(),
+				)
+				continue
+			}
+
 			// Record the service as relevant if it's not already
 			if _, ok := parentServices[parentName]; !ok {
 				parentServices[parentName] = model.FullyQualifiedResource{
@@ -266,6 +278,18 @@ func toGammaGRPCRoutes(
 				// This situation should not arise - there should be multiple
 				// layers of protection.
 				log.Warn("Can't find any parent Service in input. This is a bug, please report it to the developers.")
+				continue
+			}
+
+			// Only producer Routes are supported, so the parent Service must be in
+			// the same namespace as the GRPCRoute. The route checks do not accept
+			// such a parent, but the GRPCRoute is still passed in here when one of
+			// its other parents was accepted.
+			if parentSvc.GetNamespace() != grpcr.GetNamespace() {
+				log.Debug("gamma Ingestion: Skipping parent Service in a different namespace",
+					logfields.K8sNamespace, parentSvc.GetNamespace(),
+					logfields.Name, parentSvc.GetName(),
+				)
 				continue
 			}
 

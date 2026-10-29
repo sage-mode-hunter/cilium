@@ -1,0 +1,54 @@
+- metadata:
+    creationTimestamp: null
+    name: echo
+    namespace: victim
+  spec:
+    ports:
+    - appProtocol: http
+      name: http
+      port: 80
+      targetPort: 8080
+    - appProtocol: grpc
+      name: grpc
+      port: 7070
+      targetPort: 0
+    selector:
+      app: echo
+  status:
+    loadBalancer: {}
+- metadata:
+    creationTimestamp: null
+    name: echo
+    namespace: tenant
+  spec:
+    ports:
+    - appProtocol: http
+      name: http
+      port: 80
+      targetPort: 8080
+    - appProtocol: grpc
+      name: grpc
+      port: 7070
+      targetPort: 0
+    selector:
+      app: echo
+  status:
+    loadBalancer: {}
+- metadata:
+    creationTimestamp: null
+    name: echo-v1
+    namespace: tenant
+  spec:
+    ports:
+    - appProtocol: http
+      name: http
+      port: 80
+      targetPort: 8080
+    - appProtocol: grpc
+      name: grpc
+      port: 7070
+      targetPort: 0
+    selector:
+      app: echo-v1
+  status:
+    loadBalancer: {}

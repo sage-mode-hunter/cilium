@@ -1,0 +1,21 @@
+- metadata:
+    creationTimestamp: null
+    name: mesh-grpc-cross-namespace-parent
+    namespace: tenant
+  spec:
+    parentRefs:
+    - group: ""
+      kind: Service
+      name: echo
+      namespace: victim
+      port: 7070
+    - group: ""
+      kind: Service
+      name: echo
+      port: 7070
+    rules:
+    - backendRefs:
+      - name: echo-v1
+        port: 7070
+  status:
+    parents: null
